@@ -27,3 +27,17 @@ python -m venv venv
 .\venv\Scripts\activate
 pip install -r requirements.txt
 streamlit run app.py
+```
+### 🐧 Opción A: Para Linux
+
+```bash
+# 1. Clonar repositorio (si no lo has hecho)
+git clone [https://github.com/tu-usuario/NeuroAttention-UPAO-2025.git](https://github.com/tu-usuario/NeuroAttention-UPAO-2025.git)
+cd NeuroAttention-UPAO-2025
+
+# 2. Configuración, Instalación y Ejecución (Todo en uno)
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+streamlit run app.py
+```
