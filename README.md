@@ -19,7 +19,7 @@ Asegúrate de tener **Python 3.8+** instalado. A continuación, elige tu sistema
 
 ```bash
 # 1. Clonar repositorio (si no lo has hecho)
-git clone [https://github.com/KohakuAzureFire/NeuroAttention-UPAO-2025.git](https://github.com/KohakuAzureFire/NeuroAttention-UPAO-2025.git)
+git clone https://github.com/KohakuAzureFire/NeuroAttention-UPAO-2025.git
 cd NeuroAttention-UPAO-2025
 
 # 2. Configuración, Instalación y Ejecución (Todo en uno)
@@ -32,7 +32,7 @@ streamlit run app.py
 
 ```bash
 # 1. Clonar repositorio (si no lo has hecho)
-git clone [https://github.com/KohakuAzureFire/NeuroAttention-UPAO-2025.git](https://github.com/KohakuAzureFire/NeuroAttention-UPAO-2025.git)
+git clone https://github.com/KohakuAzureFire/NeuroAttention-UPAO-2025.git
 cd NeuroAttention-UPAO-2025
 
 # 2. Configuración, Instalación y Ejecución (Todo en uno)
