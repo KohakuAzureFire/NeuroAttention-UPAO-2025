@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import time
+import joblib
+import os
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
@@ -11,13 +12,9 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- ESTILOS CSS PERSONALIZADOS ---
+# --- ESTILOS CSS ---
 st.markdown("""
     <style>
-    /* Ajuste global para que el fondo se vea bien en ambos modos */
-    .stApp {
-        /* Dejamos el fondo por defecto de Streamlit para evitar conflictos de modo */
-    }
     .stButton>button {
         width: 100%;
         background-color: #4CAF50;
@@ -40,15 +37,33 @@ with col1:
     st.image("https://cdn-icons-png.flaticon.com/512/2814/2814666.png", width=100)
 with col2:
     st.title("NeuroAttention Predictor")
-    st.markdown("##### Sistema de Aprendizaje Estadístico para la Clasificación de Atención Infantil")
-    st.caption("Proyecto UPAO 2025 - Ingeniería de Sistemas e IA")
+    st.markdown("##### Sistema de Aprendizaje Estadístico (Random Forest Real)")
+    st.caption("Proyecto UPAO 2025")
 
 st.divider()
+
+# --- CARGAR MODELO REAL (ACTUALIZADO PARA CARPETA 'model') ---
+@st.cache_resource
+def cargar_modelo():
+    try:
+        # AQUI ESTA EL CAMBIO: Ahora busca dentro de la carpeta 'model/'
+        model = joblib.load('model/modelo_random_forest.pkl')
+        cols = joblib.load('model/columnas_modelo.pkl')
+        return model, cols, "ÉXITO"
+    except Exception as e:
+        return None, None, str(e)
+
+modelo, columnas_entrenamiento, estado_carga = cargar_modelo()
 
 # --- SIDEBAR ---
 with st.sidebar:
     st.header("📝 Perfil del Niño")
-    st.write("Ingrese los parámetros para realizar la estimación.")
+    
+    if estado_carga == "ÉXITO":
+        st.success("✅ Modelo IA Cargado (Desde carpeta /model)")
+    else:
+        st.error(f"⚠️ Error: No se encuentra el modelo en la carpeta 'model/'.")
+        st.caption(f"Detalle: {estado_carga}")
     
     with st.expander("Información Demográfica", expanded=True):
         edad = st.slider('Edad (años)', 1, 18, 10)
@@ -56,102 +71,86 @@ with st.sidebar:
     
     with st.expander("Hábitos Digitales", expanded=True):
         horas_pantalla = st.slider('Horas diarias de pantalla', 0.0, 12.0, 3.5, step=0.5)
-        tipo_pantalla = st.selectbox('Contenido Principal', ['Educativo', 'Recreacional', 'Mixto (Redes Sociales/Juegos)'])
-        tipo_dia = st.radio('Contexto de Análisis', ['Día de semana (Escolar)', 'Fin de semana'])
+        tipo_pantalla = st.selectbox('Contenido Principal', ['Educativo', 'Recreacional', 'Mixto'])
+        tipo_dia = st.radio('Contexto', ['Día de semana', 'Fin de semana'])
 
-    st.info("ℹ️ El modelo utiliza un algoritmo **Random Forest** entrenado con 120 registros clínicos.")
+# --- PROCESAMIENTO DE DATOS ---
+def procesar_entrada_real(edad, genero, horas, tipo_p, tipo_d, columnas_modelo):
+    data = {col: 0 for col in columnas_modelo}
+    
+    data['Age'] = edad
+    data['Average Screen Time'] = horas
+    if 'Sample Size' in data: data['Sample Size'] = 120 
+    
+    # One-Hot Encoding Manual
+    if genero == 'Masculino' and 'Gender_Male' in data: data['Gender_Male'] = 1
+    elif genero == 'Femenino' and 'Gender_Female' in data: data['Gender_Female'] = 1
+    
+    if tipo_p == 'Educativo' and 'Screen Time Type_Educational' in data: data['Screen Time Type_Educational'] = 1
+    elif tipo_p == 'Recreacional' and 'Screen Time Type_Recreational' in data: data['Screen Time Type_Recreational'] = 1
+    
+    if tipo_dia == 'Fin de semana' and 'Day Type_Weekend' in data: data['Day Type_Weekend'] = 1
+    elif tipo_dia == 'Día de semana' and 'Day Type_Weekday' in data: data['Day Type_Weekday'] = 1
+    
+    return pd.DataFrame([data])
 
-# --- CUERPO PRINCIPAL ---
-
-# 1. Preparación de datos
-data = {
-    'Age': edad,
-    'Average Screen Time': horas_pantalla,
-    'Gender': genero,
-    'Day Type': tipo_dia,
-    'Screen Content': tipo_pantalla
-}
-df_input = pd.DataFrame(data, index=[0])
-
-# 2. Botón de Acción
+# --- INTERFAZ PRINCIPAL ---
 col_izq, col_der = st.columns([2, 1])
 
 with col_izq:
-    st.markdown("### 📊 Panel de Resultados")
-    st.write("Haga clic en el botón para procesar los datos a través del modelo predictivo.")
+    st.subheader("📊 Resultado del Análisis")
     
-    if st.button('🚀 EJECUTAR PREDICCIÓN'):
+    if st.button('🚀 EJECUTAR PREDICCIÓN CON IA'):
         
-        with st.spinner('Normalizando variables y consultando el Bosque Aleatorio...'):
-            time.sleep(1.5)
-        
-        # --- LÓGICA DE PREDICCIÓN ---
-        limite_bajo = 1.5 + (edad * 0.05)
-        limite_medio = 3.0 + (edad * 0.05)
-        limite_alto = 5.0 + (edad * 0.05)
-        
-        score_atencion = max(0, 100 - (horas_pantalla * 10))
-        
-        if horas_pantalla < limite_bajo:
-            prediccion = "ALTA"
-            mensaje = "Capacidad de atención óptima."
-            icono = "🌟"
-        elif horas_pantalla < limite_medio:
-            prediccion = "MODERADA"
-            mensaje = "Atención dentro del promedio, monitorear."
-            icono = "⚖️"
-        elif horas_pantalla < limite_alto:
-            prediccion = "BAJA"
-            mensaje = "Signos de dispersión detectados."
-            icono = "⚠️"
+        if modelo is not None and columnas_entrenamiento is not None:
+            try:
+                df_real = procesar_entrada_real(edad, genero, horas_pantalla, tipo_pantalla, tipo_dia, columnas_entrenamiento)
+                prediccion_raw = modelo.predict(df_real)[0]
+                
+                # Mapeo de resultados
+                mapa_clases = {0: "MUY BAJA", 1: "BAJA", 2: "MODERADA", 3: "ALTA"}
+                if isinstance(prediccion_raw, str):
+                    prediccion = prediccion_raw.upper()
+                    traduccion = {"LOW": "BAJA", "VERY LOW": "MUY BAJA", "MODERATE": "MODERADA", "HIGH": "ALTA"}
+                    prediccion = traduccion.get(prediccion, prediccion)
+                else:
+                    prediccion = mapa_clases.get(prediccion_raw, "DESCONOCIDO")
+
+                origen = "Modelo Random Forest (Real)"
+                
+            except Exception as e:
+                st.error(f"Error en predicción: {e}")
+                prediccion = "ERROR"
         else:
-            prediccion = "MUY BAJA"
-            mensaje = "Riesgo crítico de déficit de atención."
-            icono = "🚨"
+            # Respaldo Simulado
+            origen = "Simulación (Modelo no encontrado)"
+            if horas_pantalla < 2.0: prediccion = "ALTA"
+            elif horas_pantalla < 3.5: prediccion = "MODERADA"
+            elif horas_pantalla < 5.5: prediccion = "BAJA"
+            else: prediccion = "MUY BAJA"
 
-        # --- MOSTRAR RESULTADOS ---
-        st.success("✅ Análisis completado con éxito")
+        # Visualización
+        color_map = {"ALTA": "#2ecc71", "MODERADA": "#f1c40f", "BAJA": "#e67e22", "MUY BAJA": "#e74c3c"}
+        color_final = color_map.get(prediccion, "#333")
         
-        m1, m2, m3 = st.columns(3)
-        with m1:
-            st.metric(label="Nivel de Atención", value=prediccion)
-        with m2:
-            st.metric(label="Score de Salud Digital", value=f"{int(score_atencion)}/100", delta=f"{int(score_atencion-50)} vs Promedio")
-        with m3:
-            st.metric(label="Confianza del Modelo", value="82.5%")
-
-        st.write("### Escala de Impacto:")
-        st.progress(int(score_atencion) / 100)
-        st.caption(f"El índice calculado sugiere una clasificación: {prediccion}")
-        
-        # --- AQUÍ ESTÁ LA CORRECCIÓN ---
-        # He forzado el color: #333333 (negro suave) en el contenedor, el título y el texto.
         st.markdown(f"""
-        <div style="
-            padding: 15px; 
-            border-radius: 10px; 
-            background-color: #f0f2f6; 
-            color: #333333;
-            border-left: 5px solid {'#2ecc71' if prediccion == 'ALTA' else '#e74c3c'};
-            margin-top: 20px;">
-            <h4 style="color: #333333; margin:0;">{icono} Recomendación del Sistema:</h4>
-            <p style="color: #333333; margin-top:5px; font-size: 16px;">
-                {mensaje} Se sugiere ajustar el tiempo de pantalla de tipo <b>{tipo_pantalla}</b>.
-            </p>
+        <div style="background-color: {color_final}; padding: 20px; border-radius: 10px; text-align: center; color: white;">
+            <h1 style="margin:0; color: white;">{prediccion}</h1>
+            <p style="margin:0;">Fuente: {origen}</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown(f"""
+        <style> @media print {{ .box {{ -webkit-print-color-adjust: exact !important; }} }} </style>
+        <div class="box" style="margin-top: 20px; padding: 15px; background-color: #f0f2f6; color: #333; border-radius: 10px; border-left: 5px solid {color_final};">
+            <h4 style="color: #333; margin:0;">💡 Recomendación:</h4>
+            <p style="color: #333;">Basado en el perfil de <b>{edad} años</b>: Se sugiere monitorear los tiempos de descanso.</p>
         </div>
         """, unsafe_allow_html=True)
 
-    else:
-        st.info("Esperando entrada de datos...")
-
-# 3. Datos Técnicos
 with col_der:
     st.write("### 🔍 Datos Técnicos")
-    with st.expander("Ver Vector de Entrada", expanded=True):
-        st.dataframe(df_input.T)
-    
-    with st.expander("Depuración del Modelo"):
-        st.text("Model: RandomForestClassifier")
-        st.text("N_Estimators: 100")
-        st.text("Criterion: Gini")
-        st.text("Status: Loaded (Simulated)")
+    st.info(f"Status: {estado_carga}")
+    if modelo:
+        st.write("Hiperparámetros:")
+        st.code(modelo.get_params())
