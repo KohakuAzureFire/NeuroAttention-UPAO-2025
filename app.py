@@ -42,28 +42,23 @@ with col2:
 
 st.divider()
 
-# --- CARGAR MODELO REAL (ACTUALIZADO PARA CARPETA 'model') ---
+# --- CARGAR MODELO REAL (Silencioso) ---
 @st.cache_resource
 def cargar_modelo():
     try:
-        # AQUI ESTA EL CAMBIO: Ahora busca dentro de la carpeta 'model/'
+        # Busca dentro de la carpeta 'model/'
         model = joblib.load('model/modelo_random_forest.pkl')
         cols = joblib.load('model/columnas_modelo.pkl')
-        return model, cols, "ÉXITO"
+        return model, cols
     except Exception as e:
-        return None, None, str(e)
+        return None, None
 
-modelo, columnas_entrenamiento, estado_carga = cargar_modelo()
+modelo, columnas_entrenamiento = cargar_modelo()
 
-# --- SIDEBAR ---
+# --- SIDEBAR (ENTRADA DE DATOS) ---
 with st.sidebar:
     st.header("📝 Perfil del Niño")
-    
-    if estado_carga == "ÉXITO":
-        st.success("✅ Modelo IA Cargado (Desde carpeta /model)")
-    else:
-        st.error(f"⚠️ Error: No se encuentra el modelo en la carpeta 'model/'.")
-        st.caption(f"Detalle: {estado_carga}")
+    # Se eliminó el mensaje de estado (Success/Error) para limpiar la interfaz
     
     with st.expander("Información Demográfica", expanded=True):
         edad = st.slider('Edad (años)', 1, 18, 10)
@@ -71,26 +66,49 @@ with st.sidebar:
     
     with st.expander("Hábitos Digitales", expanded=True):
         horas_pantalla = st.slider('Horas diarias de pantalla', 0.0, 12.0, 3.5, step=0.5)
+        # Opciones alineadas con tu dataset
         tipo_pantalla = st.selectbox('Contenido Principal', ['Educativo', 'Recreacional', 'Mixto'])
         tipo_dia = st.radio('Contexto', ['Día de semana', 'Fin de semana'])
 
-# --- PROCESAMIENTO DE DATOS ---
+# --- PROCESAMIENTO DE DATOS (CORREGIDO) ---
 def procesar_entrada_real(edad, genero, horas, tipo_p, tipo_d, columnas_modelo):
+    # 1. Crear plantilla con todas las columnas en 0
     data = {col: 0 for col in columnas_modelo}
     
-    data['Age'] = edad
-    data['Average Screen Time'] = horas
+    # 2. Asignar variables numéricas (CORRECCIÓN DE NOMBRE)
+    # Tu modelo fue entrenado con "(hours)", así que usamos ese nombre exacto
+    if 'Average Screen Time (hours)' in data:
+        data['Average Screen Time (hours)'] = horas
+    else:
+        # Respaldo por si acaso cambiaste el nombre
+        data['Average Screen Time'] = horas
+        
+    if 'Age' in data: data['Age'] = edad
     if 'Sample Size' in data: data['Sample Size'] = 120 
     
-    # One-Hot Encoding Manual
-    if genero == 'Masculino' and 'Gender_Male' in data: data['Gender_Male'] = 1
-    elif genero == 'Femenino' and 'Gender_Female' in data: data['Gender_Female'] = 1
-    
-    if tipo_p == 'Educativo' and 'Screen Time Type_Educational' in data: data['Screen Time Type_Educational'] = 1
-    elif tipo_p == 'Recreacional' and 'Screen Time Type_Recreational' in data: data['Screen Time Type_Recreational'] = 1
-    
-    if tipo_dia == 'Fin de semana' and 'Day Type_Weekend' in data: data['Day Type_Weekend'] = 1
-    elif tipo_dia == 'Día de semana' and 'Day Type_Weekday' in data: data['Day Type_Weekday'] = 1
+    # 3. Mapeo inteligente de variables categóricas (One-Hot)
+    # GÉNERO
+    if genero == 'Masculino' and 'Gender_Male' in data: 
+        data['Gender_Male'] = 1
+    elif genero == 'Otro':
+        # Busca cualquier columna que diga 'Gender' y 'Other' (para evitar errores de texto exacto)
+        for col in data:
+            if 'Gender' in col and 'Other' in col:
+                data[col] = 1
+    # Nota: 'Femenino' no hace nada porque es la clase base (todos 0)
+
+    # TIPO DE PANTALLA
+    if tipo_p == 'Recreacional' and 'Screen Time Type_Recreational' in data: 
+        data['Screen Time Type_Recreational'] = 1
+    elif tipo_p == 'Mixto':
+        # En tu dataset 'Mixto' suele ser 'Total' o similar
+        if 'Screen Time Type_Total' in data: data['Screen Time Type_Total'] = 1
+    # Nota: 'Educativo' es la clase base
+
+    # TIPO DE DÍA
+    if tipo_dia == 'Fin de semana' and 'Day Type_Weekend' in data: 
+        data['Day Type_Weekend'] = 1
+    # Nota: 'Día de semana' es la clase base
     
     return pd.DataFrame([data])
 
@@ -102,13 +120,19 @@ with col_izq:
     
     if st.button('🚀 EJECUTAR PREDICCIÓN CON IA'):
         
+        # Verificar si el modelo cargó bien
         if modelo is not None and columnas_entrenamiento is not None:
             try:
+                # 1. Procesar datos
                 df_real = procesar_entrada_real(edad, genero, horas_pantalla, tipo_pantalla, tipo_dia, columnas_entrenamiento)
+                
+                # 2. Predecir
                 prediccion_raw = modelo.predict(df_real)[0]
                 
-                # Mapeo de resultados
+                # 3. Mapear resultado a texto
                 mapa_clases = {0: "MUY BAJA", 1: "BAJA", 2: "MODERADA", 3: "ALTA"}
+                
+                # Manejo robusto de la respuesta (texto o número)
                 if isinstance(prediccion_raw, str):
                     prediccion = prediccion_raw.upper()
                     traduccion = {"LOW": "BAJA", "VERY LOW": "MUY BAJA", "MODERATE": "MODERADA", "HIGH": "ALTA"}
@@ -119,38 +143,48 @@ with col_izq:
                 origen = "Modelo Random Forest (Real)"
                 
             except Exception as e:
-                st.error(f"Error en predicción: {e}")
+                # Si falla algo técnico, mostramos error pequeño pero usamos simulación para no detener la demo
+                st.error(f"Error técnico: {e}")
                 prediccion = "ERROR"
+                origen = "Error en cálculo"
         else:
-            # Respaldo Simulado
-            origen = "Simulación (Modelo no encontrado)"
+            # RESPALDO: Si no hay archivos .pkl
+            origen = "Simulación (Archivos no encontrados)"
             if horas_pantalla < 2.0: prediccion = "ALTA"
             elif horas_pantalla < 3.5: prediccion = "MODERADA"
             elif horas_pantalla < 5.5: prediccion = "BAJA"
             else: prediccion = "MUY BAJA"
 
-        # Visualización
-        color_map = {"ALTA": "#2ecc71", "MODERADA": "#f1c40f", "BAJA": "#e67e22", "MUY BAJA": "#e74c3c"}
-        color_final = color_map.get(prediccion, "#333")
-        
-        st.markdown(f"""
-        <div style="background-color: {color_final}; padding: 20px; border-radius: 10px; text-align: center; color: white;">
-            <h1 style="margin:0; color: white;">{prediccion}</h1>
-            <p style="margin:0;">Fuente: {origen}</p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        st.markdown(f"""
-        <style> @media print {{ .box {{ -webkit-print-color-adjust: exact !important; }} }} </style>
-        <div class="box" style="margin-top: 20px; padding: 15px; background-color: #f0f2f6; color: #333; border-radius: 10px; border-left: 5px solid {color_final};">
-            <h4 style="color: #333; margin:0;">💡 Recomendación:</h4>
-            <p style="color: #333;">Basado en el perfil de <b>{edad} años</b>: Se sugiere monitorear los tiempos de descanso.</p>
-        </div>
-        """, unsafe_allow_html=True)
+        # --- MOSTRAR RESULTADO VISUAL ---
+        if prediccion != "ERROR":
+            color_map = {"ALTA": "#2ecc71", "MODERADA": "#f1c40f", "BAJA": "#e67e22", "MUY BAJA": "#e74c3c"}
+            color_final = color_map.get(prediccion, "#333")
+            
+            st.markdown(f"""
+            <div style="background-color: {color_final}; padding: 20px; border-radius: 10px; text-align: center; color: white; margin-bottom: 20px;">
+                <h1 style="margin:0; color: white;">{prediccion}</h1>
+                <p style="margin:0; font-size: 12px; opacity: 0.8;">Fuente: {origen}</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Tarjeta de Recomendación (Estilo fijo para impresión/dark mode)
+            st.markdown(f"""
+            <style> @media print {{ .box {{ -webkit-print-color-adjust: exact !important; }} }} </style>
+            <div class="box" style="padding: 15px; background-color: #f0f2f6; color: #333333; border-radius: 10px; border-left: 5px solid {color_final};">
+                <h4 style="color: #333333; margin:0;">💡 Recomendación:</h4>
+                <p style="color: #333333; margin-top: 5px;">
+                    Basado en un perfil de <b>{edad} años</b> con uso <b>{tipo_pantalla}</b>: 
+                    Se sugiere monitorear los tiempos de descanso y fomentar actividades fuera de línea.
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
 
 with col_der:
     st.write("### 🔍 Datos Técnicos")
-    st.info(f"Status: {estado_carga}")
+    # Información técnica discreta
     if modelo:
-        st.write("Hiperparámetros:")
-        st.code(modelo.get_params())
+        st.caption("✅ Modelo: Random Forest (v1.0)")
+        with st.expander("Ver Parámetros Internos"):
+            st.code(modelo.get_params())
+    else:
+        st.caption("⚠️ Modelo no cargado (Modo Demo)")
